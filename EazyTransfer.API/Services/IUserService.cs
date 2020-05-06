@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
+using EazyTransfer.API.Models;
 using EazyTransfer.Shared;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
@@ -23,105 +24,156 @@ namespace EazyTransfer.API.Services
     {
         private UserManager<IdentityUser> _userManager;
         private IConfiguration _configuration;
+        private readonly EazyTransferDbContext _context;
 
-        public UserService(UserManager<IdentityUser> userManager, IConfiguration configuration)
+
+
+        public UserService(UserManager<IdentityUser> userManager, IConfiguration configuration, EazyTransferDbContext context)
         {
             _userManager = userManager;
             _configuration = configuration;
+            _context = context;
         }
 
         public async Task<UserManagerResponse> RegisterUserAsync(RegisterViewModel model)
         {
-            if (model == null)
-                throw new NullReferenceException("Register Model is Null");
+            try
+            {
 
-            if (model.Password != model.ConfirmPassword)
+                if (model == null)
+                    throw new NullReferenceException("Register Model is Null");
+
+                if (model.Password != model.ConfirmPassword)
+                    return new UserManagerResponse
+                    {
+                        Message = "Confirm password doesn't match password",
+                        IsSuccess = false,
+                    };
+
+                var IdentityUser = new IdentityUser
+                {
+                    Email = model.Email,
+                    UserName = model.Email,
+                };
+
+                var result = await _userManager.CreateAsync(IdentityUser, model.Password);
+
+                if (result.Succeeded)
+                {
+
+                    //register to User and Merchant table
+                    var user = new User();
+                    var merchant = new MerchantAccount();
+                    user.Email = model.Email;
+                    user.Role = "Merchant";
+                    user.Password = "secret"; //aspNetusers Management
+                    user.CreatedOn = DateTime.Now;
+
+                    await _context.Users.AddAsync(user);
+                    await _context.SaveChangesAsync();
+
+                    merchant.UserId = user.UserId;
+                    merchant.BusinessName = model.BusinessName;
+                    merchant.BusinessPhone = model.BusinessPhone;
+                    merchant.BusinessAddress = model.BusinessAddress;
+                    merchant.ApiKey = ApiUtil.GenerateKey(); //generate random key
+                    merchant.SecretKey = "secret"; //aspnet management
+                    merchant.WebHook = model.MerchantWebHook;
+                    merchant.CreatedOn = DateTime.Now;
+
+                   await _context.MerchantAccounts.AddAsync(merchant);
+                    await _context.SaveChangesAsync();
+
+
+                    return new UserManagerResponse
+                    {
+                        Message = "User created successfully",
+                        IsSuccess = true,
+
+                    };
+                }
+
+                //did not succeed
                 return new UserManagerResponse
                 {
-                    Message = "Confirm password doesn't match password",
+                    Message = "User did not create",
                     IsSuccess = false,
-                };
-
-            var IdentityUser = new IdentityUser
-            {
-                Email = model.Email,
-                UserName = model.Email,
-            };
-
-            var result = await _userManager.CreateAsync(IdentityUser, model.Password);
-
-            if (result.Succeeded)
-            {
-                return new UserManagerResponse
-                {
-                    Message = "User created successfully",
-                    IsSuccess = true,
+                    Errors = result.Errors.Select(e => e.Description),
 
                 };
+
             }
-
-            //did not succeed
-            return new UserManagerResponse
+            catch (Exception ex)
             {
-                Message = "User did not create",
-                IsSuccess = false,
-                Errors = result.Errors.Select(e => e.Description),
-
-            };
+                throw new NullReferenceException(ex.Message);
+            }
+            
         }
 
 
         public async Task<UserManagerResponse> LoginUserAsync(LoginViewModel model)
         {
-            var user = await _userManager.FindByEmailAsync(model.Email);
-
-            if (user == null)
+            try
             {
-                return new UserManagerResponse
+                var user = await _userManager.FindByEmailAsync(model.Email);
+
+                if (user == null)
                 {
-                    Message = "There's no user with that Email Address",
-                    IsSuccess = false,
+                    return new UserManagerResponse
+                    {
+                        Message = "There's no user with that Email Address",
+                        IsSuccess = false,
 
-                };
-            }
+                    };
+                }
 
-            var result = await _userManager.CheckPasswordAsync(user, model.Password);
+                var result = await _userManager.CheckPasswordAsync(user, model.Password);
 
-            if (!result)
-            {
-                return new UserManagerResponse
+                if (!result)
                 {
-                    Message = "Invalid Password",
-                    IsSuccess = false,
+                    return new UserManagerResponse
+                    {
+                        Message = "Invalid Password",
+                        IsSuccess = false,
 
-                };
-            }
+                    };
+                }
 
-            var claims = new[]
-            {
+                var claims = new[]
+                {
                 new Claim("Email", model.Email),
                 new Claim(ClaimTypes.NameIdentifier, user.Id),
-            };
+                };
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["AuthSettings:Key"]));
+                var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["AuthSettings:Key"]));
 
-            var token = new JwtSecurityToken(
-                issuer: _configuration["AuthSettings:Issuer"],
-                audience: _configuration["AuthSettings:Audience"],
-                claims: claims,
-                expires: DateTime.Now.AddMinutes(10),
-                signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
-                );
+                var token = new JwtSecurityToken(
+                    issuer: _configuration["AuthSettings:Issuer"],
+                    audience: _configuration["AuthSettings:Audience"],
+                    claims: claims,
+                    expires: DateTime.Now.AddMinutes(10),
+                    signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
+                    );
 
-            string tokenAsString = new JwtSecurityTokenHandler().WriteToken(token);
+                string tokenAsString = new JwtSecurityTokenHandler().WriteToken(token);
+                int userid =  _context.Users.FirstOrDefault(x => x.Email == model.Email).UserId;
+                string merchantAPIKey = _context.MerchantAccounts.FirstOrDefault(x => x.UserId == userid).ApiKey;
 
-            return new UserManagerResponse
+                return new UserManagerResponse
+                {
+                    Message = tokenAsString,
+                    HashCode = merchantAPIKey,
+                    IsSuccess = true,
+                    ExpireDate = token.ValidTo
+                };
+
+            }
+            catch (Exception ex)
             {
-                Message = tokenAsString,
-                IsSuccess = true,
-                ExpireDate = token.ValidTo
-            };
 
+                throw new NullReferenceException(ex.Message);
+            }
+          
         }
     }
 

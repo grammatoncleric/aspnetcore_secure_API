@@ -20,5 +20,21 @@ namespace EazyTransfer.Shared
         [StringLength(50, MinimumLength = 5)]
         public string ConfirmPassword { get; set; }
 
+        [Required]
+        [StringLength(50, MinimumLength = 5)]
+        public string BusinessName { get; set; }
+
+        [Required]
+        [StringLength(50, MinimumLength = 5)]
+        public string BusinessPhone { get; set; }
+
+        [Required]
+        [StringLength(50, MinimumLength = 5)]
+        public string BusinessAddress { get; set; }
+
+        [Required]
+        [StringLength(50, MinimumLength = 5)]
+        public string MerchantWebHook { get; set; }
+
     }
 }

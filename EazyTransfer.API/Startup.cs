@@ -39,6 +39,11 @@ namespace EazyTransfer.API
                 options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection"));
             });
 
+            services.AddDbContext<EazyTransferDbContext>(options =>
+            {
+                options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection"));
+            });
+
             services.AddIdentity<IdentityUser, IdentityRole>(options =>
             {
                 options.Password.RequireDigit = true;
@@ -66,6 +71,10 @@ namespace EazyTransfer.API
             });
 
             services.AddScoped<IUserService, UserService>();
+            services.AddScoped<ICustomerService, CustomerService>();
+            services.AddScoped<IMerchantService, MerchantService>();
+            services.AddScoped<ITransactionService, TransactionService>();
+
 
             //services.AddMvcCore();
 

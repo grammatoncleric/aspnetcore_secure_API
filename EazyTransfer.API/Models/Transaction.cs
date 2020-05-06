@@ -13,6 +13,8 @@ namespace EazyTransfer.API.Models
         public string CustomerAccountId { get; set; }
         public string Meta { get; set; }
         public DateTime CreatedOn { get; set; }
+        public string AccountNumber { get; set; }
+
 
     }
 }
